@@ -14,6 +14,11 @@ const config = {
 		adapter: adapter({
 			fallback: '200.html' // may differ from host to host
 		})
+	},
+
+	// Enable Svelte 5 features
+	compilerOptions: {
+		runes: true
 	}
 };
 
