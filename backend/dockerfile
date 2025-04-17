@@ -1,0 +1,36 @@
+# /home/asus/projects/web/learing-self-hosting/backend/Dockerfile
+
+# ---- Builder Stage ----
+FROM golang:1.23-alpine AS builder
+
+# Set necessary environment variables
+ENV CGO_ENABLED=0 GOOS=linux
+WORKDIR /app
+
+# Copy go module files first to leverage Docker cache
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy the rest of the source code
+COPY . .
+
+# Build the application
+# Assumes your main package is in cmd/server
+RUN go build -a -installsuffix cgo -o /app/main ./cmd/server
+
+# ---- Final Stage ----
+FROM alpine:latest
+
+WORKDIR /root/
+
+# Copy the pre-built binary file from the builder stage.
+COPY --from=builder /app/main .
+
+# Copy .env file if you are using one (adjust path if needed)
+# COPY .env .
+# Ensure your Go app reads the PORT env var or defaults to 8080
+# EXPOSE will be handled by docker-compose 'ports' section, but good practice to document
+EXPOSE 8080
+
+# Command to run the executable
+CMD ["./main"]
