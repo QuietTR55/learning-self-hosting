@@ -1,6 +1,7 @@
 package main
 
 import (
+	redisClient "backend/internal/redisclient"
 	"log"
 	"os"
 
@@ -9,6 +10,7 @@ import (
 )
 
 func main() {
+	redisClient.InitRedis()
 	router := gin.Default()
 
 	config := cors.DefaultConfig()

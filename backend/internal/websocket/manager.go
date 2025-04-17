@@ -1,11 +1,13 @@
 package websocket
 
 import (
+	redisClient "backend/internal/redisclient"
 	"log"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/redis/go-redis/v9"
 )
 
 type Client struct {
@@ -13,6 +15,7 @@ type Client struct {
 }
 
 type ClientManager struct {
+	pubsub *redis.PubSub
 	clients    map[*Client]bool
 	Register   chan *Client
 	Unregister chan *Client
@@ -21,7 +24,9 @@ type ClientManager struct {
 }
 
 func NewClientManager() *ClientManager {
+	pubsub := redisClient.Rdb.Subscribe(redisClient.Ctx,"messages")
 	return &ClientManager{
+		pubsub: pubsub,
 		clients:    make(map[*Client]bool),
 		Register:   make(chan *Client),
 		Unregister: make(chan *Client),
@@ -29,8 +34,16 @@ func NewClientManager() *ClientManager {
 	}
 }
 
+func (m *ClientManager) listenToRedis() {
+	ch := m.pubsub.Channel();
+	for msg := range ch{
+		m.Broadcast <- []byte(msg.Payload)
+	}
+}
+
 func (m *ClientManager) Run() {
 	log.Println("WebSocket Manager Run() loop started...")
+	go m.listenToRedis()
 	for {
 		select {
 		case client := <-m.Register:

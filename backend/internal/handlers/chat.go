@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	redisClient "backend/internal/redisclient"
 	"backend/internal/repos"
 	"backend/internal/websocket"
 	"log"
@@ -36,6 +37,8 @@ func (h *ChatHandler) SendMessage(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	h.ws.Broadcast <- []byte(message)
+
+
+	redisClient.Rdb.Publish(redisClient.Ctx, "messages", message)
 	c.JSON(http.StatusOK, gin.H{"message": "Message created successfully"})
 }

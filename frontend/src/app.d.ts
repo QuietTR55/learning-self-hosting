@@ -8,6 +8,15 @@ declare global {
 		// interface PageState {}
 		// interface Platform {}
 	}
+
+	// Svelte 5 runes
+	// These declarations allow TypeScript to recognize the $state, $derived, etc. syntax
+	function $state<T>(initial: T): T;
+	function $state<T>(): T | undefined;
+	function $derived<T>(expression: T): T;
+	const svelteHTML: {
+		[key: string]: any;
+	};
 }
 
 export {};
