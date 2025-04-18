@@ -2,6 +2,8 @@
     import { onMount, tick } from "svelte";
     import "../app.css";
 
+    let port = $state(32770);
+
     let messages = $state<string[]>([]);
     let ws = $state<WebSocket | null>(null);
     let readyState = $state<number | null>(null);
@@ -22,6 +24,37 @@
     // --- Dark Mode State ---
     let isDarkMode = $state(false); // Default to light mode
 
+    const connectToNewPort = () => {
+        console.log(`Switching to port ${port}`);
+        // Reset messages to avoid duplication
+        messages = [];
+        connectWebSocket();
+        fetchMessages();
+    }
+    const fetchMessages = async () => {
+            try {
+                const result = await fetch(`http://localhost:${port}/chat`);
+                if (result.ok) {
+                    const data = await result.json();
+                    if (Array.isArray(data)) {
+                        messages = data.map((msg: any) => msg.Content).reverse();
+                    } else {
+                        console.error("Fetched data is not an array:", data);
+                        messages = []; // Reset or handle as appropriate
+                    }
+                    // Scroll after initial fetch
+                    await tick();
+                    if (messageContainer) {
+                        messageContainer.scrollTop = messageContainer.scrollHeight;
+                    }
+                    userScrolledUp = false;
+                } else {
+                    console.error("Failed to fetch initial messages:", result.status);
+                }
+            } catch(error) {
+                 console.error("Error fetching initial messages:", error);
+            }
+        }
     function toggleDarkMode() {
         isDarkMode = !isDarkMode;
         
@@ -62,7 +95,7 @@
         const formData = new FormData();
         formData.append("message", message);
         try {
-            const result = await fetch("http://localhost:32768/chat", {
+            const result = await fetch(`http://localhost:${port}/chat`, {
                 method: "POST",
                 body: formData
             });
@@ -78,9 +111,36 @@
     }
 
     function connectWebSocket() {
-        if (isReconnecting) return;
+        // Properly close any existing connection first
+        if (ws) {
+            // Set flag to prevent reconnect attempts on intentional close
+            const oldWs = ws;
+            ws = null; // Clear reference first to prevent reconnect attempts
+            
+            try {
+                if (oldWs.readyState < WebSocket.CLOSING) {
+                    console.log("Closing previous WebSocket connection");
+                    oldWs.onclose = null; // Remove onclose handler to prevent reconnect
+                    oldWs.onerror = null; // Remove error handler
+                    oldWs.close(1000, "Intentional disconnect");
+                }
+            } catch (e) {
+                console.error("Error closing previous connection:", e);
+            }
+        }
         
-        const socket = new WebSocket("ws://localhost:32768/ws");
+        // Clear any pending reconnect timers
+        if (reconnectTimer !== null) {
+            window.clearTimeout(reconnectTimer);
+            reconnectTimer = null;
+        }
+        
+        if (isReconnecting) {
+            isReconnecting = false;
+        }
+        
+        console.log(`Connecting to WebSocket on port ${port}`);
+        const socket = new WebSocket(`ws://localhost:${port}/ws`);
         ws = socket;
         readyState = socket.readyState;
 
@@ -93,6 +153,12 @@
         };
 
         socket.onmessage = async (event) => {
+            // Make sure this is still our active WebSocket
+            if (ws !== socket) {
+                console.log("Received message on inactive socket, ignoring");
+                return;
+            }
+            
             console.log("Message from server ", event.data);
 
             const shouldScroll = isNearBottom(messageContainer);
@@ -109,18 +175,25 @@
 
         socket.onclose = (event) => {
             console.log("Disconnected from server:", event.code, event.reason);
-            readyState = socket.readyState;
-            ws = null;
             
-            // Only attempt to reconnect on abnormal closure or if not deliberately closed
-            if (event.code !== 1000 && event.code !== 1001) {
-                scheduleReconnect();
+            // Only update state if this is still our active WebSocket
+            if (ws === socket) {
+                readyState = socket.readyState;
+                ws = null;
+                
+                // Only attempt to reconnect on abnormal closure or if not deliberately closed
+                if (event.code !== 1000 && event.code !== 1001) {
+                    scheduleReconnect();
+                }
             }
         };
 
         socket.onerror = (error) => {
-            console.error("WebSocket Error:", error);
-            readyState = socket.readyState;
+            // Only update state if this is still our active WebSocket
+            if (ws === socket) {
+                console.error("WebSocket Error:", error);
+                readyState = socket.readyState;
+            }
         };
     }
 
@@ -160,30 +233,7 @@
         console.log("Mounted");
         connectWebSocket();
 
-        const fetchMessages = async () => {
-            try {
-                const result = await fetch("http://localhost:32768/chat");
-                if (result.ok) {
-                    const data = await result.json();
-                    if (Array.isArray(data)) {
-                        messages = data.map((msg: any) => msg.Content).reverse();
-                    } else {
-                        console.error("Fetched data is not an array:", data);
-                        messages = []; // Reset or handle as appropriate
-                    }
-                    // Scroll after initial fetch
-                    await tick();
-                    if (messageContainer) {
-                        messageContainer.scrollTop = messageContainer.scrollHeight;
-                    }
-                    userScrolledUp = false;
-                } else {
-                    console.error("Failed to fetch initial messages:", result.status);
-                }
-            } catch(error) {
-                 console.error("Error fetching initial messages:", error);
-            }
-        }
+        
 
         fetchMessages();
 
@@ -219,6 +269,11 @@
                    class:dark:text-red-400={readyState !== 1}>
                     {readyStateString}
                 </p>
+            </div>
+            <div>
+                <p class="text-sm font-medium text-gray-500 dark:text-gray-400">PORT:</p>
+                <input type="number" bind:value={port} class="font-semibold" />
+                <button onclick={connectToNewPort} class="text-sm font-medium text-gray-500 dark:text-gray-400">Connect</button>
             </div>
             <!-- Dark Mode Toggle Button -->
             <button
